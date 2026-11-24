@@ -1,0 +1,653 @@
+﻿<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A-Frame Floating Sheep Sky</title>
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+    <script>
+      // 360도 파노라마 배경을 구름으로 꽉 채우는 스카이돔 컴포넌트
+      AFRAME.registerComponent("cloud-sky", {
+        init: function () {
+          var canvas = document.createElement("canvas");
+          canvas.width = 1024;
+          canvas.height = 512;
+          var ctx = canvas.getContext("2d");
+
+          // 눈이 편안한 차분한 낮하늘 그라데이션
+          var grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+          grad.addColorStop(0, "#367cb8");
+          grad.addColorStop(0.4, "#5897cd");
+          grad.addColorStop(0.75, "#78ade0");
+          grad.addColorStop(1, "#9ec8eb");
+          ctx.fillStyle = grad;
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          // 부드럽고 눈부시지 않은 구름 퍼프 그리기
+          function drawCloudPuff(x, y, radius, alpha) {
+            var radGrad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+            radGrad.addColorStop(0, "rgba(240, 245, 252, " + (alpha * 0.75) + ")");
+            radGrad.addColorStop(0.45, "rgba(228, 238, 248, " + (alpha * 0.55) + ")");
+            radGrad.addColorStop(0.8, "rgba(215, 230, 244, " + (alpha * 0.2) + ")");
+            radGrad.addColorStop(1, "rgba(200, 222, 240, 0)");
+            ctx.fillStyle = radGrad;
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // 하늘 전체에 구름을 촘촘히 겹쳐서 은은한 구름하늘 연출
+          for (var i = 0; i < 450; i++) {
+            var cx = Math.random() * canvas.width;
+            var cy = Math.random() * canvas.height;
+            var cr = 45 + Math.random() * 120;
+            var ca = 0.16 + Math.random() * 0.28;
+            drawCloudPuff(cx, cy, cr, ca);
+
+            // 좌우 360도 경계선 부드럽게 연결
+            if (cx < cr) drawCloudPuff(cx + canvas.width, cy, cr, ca);
+            if (cx > canvas.width - cr) drawCloudPuff(cx - canvas.width, cy, cr, ca);
+          }
+
+          this.el.setAttribute("material", {
+            shader: "flat",
+            src: canvas,
+            side: "back"
+          });
+        }
+      });
+
+      // 씬 주변을 3D 입체 뭉게구름으로 꽉 채우는 컴포넌트
+      AFRAME.registerComponent("cloud-cluster-field", {
+        schema: {
+          count: { type: "int", default: 60 }
+        },
+        init: function () {
+          var container = document.createElement("a-entity");
+
+          function createSingleCloud(x, y, z, scale) {
+            var cloud = document.createElement("a-entity");
+            cloud.setAttribute("position", x + " " + y + " " + z);
+            cloud.setAttribute("scale", scale + " " + scale + " " + scale);
+
+            // 여러 개의 구체를 겹쳐 볼륨감 있는 구름 생성
+            var puffCount = 7 + Math.floor(Math.random() * 4);
+            for (var p = 0; p < puffCount; p++) {
+              var puff = document.createElement("a-sphere");
+              var px = (Math.random() - 0.5) * 3.2;
+              var py = (Math.random() - 0.5) * 1.2;
+              var pz = (Math.random() - 0.5) * 2.8;
+              var pr = 1.0 + Math.random() * 1.1;
+
+              puff.setAttribute("position", px + " " + py + " " + pz);
+              puff.setAttribute("radius", pr);
+              puff.setAttribute("material", {
+                shader: "standard",
+                color: "#eef3f8",
+                roughness: 0.95,
+                metalness: 0.0,
+                transparent: true,
+                opacity: 0.9
+              });
+              cloud.appendChild(puff);
+            }
+            return cloud;
+          }
+
+          // 시야(눈높이)를 가리지 않도록 높은 상공과 먼 외곽 아래 위주로 뭉게구름 배치
+          for (var i = 0; i < this.data.count; i++) {
+            var angle = Math.random() * Math.PI * 2;
+            var dist = 18 + Math.random() * 30; // 거리 18~48m
+            // 눈높이(-2 ~ 5)를 비우고 상공(8~26m) 또는 먼 바닥 아래(-10~-6m)로 분산
+            var isHigh = Math.random() > 0.25;
+            var height = isHigh ? (8 + Math.random() * 18) : (-10 + Math.random() * 4);
+            var cx = Math.cos(angle) * dist;
+            var cy = height;
+            var cz = Math.sin(angle) * dist;
+            var scale = 1.0 + Math.random() * 2.0;
+
+            container.appendChild(createSingleCloud(cx, cy, cz, scale));
+          }
+
+          // 하늘의 구름이 서서히 흘러가도록 부드러운 자전 애니메이션 부여
+          container.setAttribute(
+            "animation",
+            "property: rotation; to: 0 360 0; loop: true; dur: 300000; easing: linear;"
+          );
+          this.el.appendChild(container);
+        }
+      });
+
+      // 몽글몽글하고 귀여운 동물 양(Sheep) 3D 컴포넌트 (달리기, 앉아서 쉬기, 누워 자기 지원)
+      AFRAME.registerComponent("sheep", {
+        schema: {
+          woolColor: { type: "color", default: "#ffffff" },
+          faceColor: { type: "color", default: "#18181b" },
+          legColor: { type: "color", default: "#09090b" },
+          scale: { type: "number", default: 1.0 },
+          pose: { type: "string", default: "standing" } // "standing", "sitting", "sleeping"
+        },
+        init: function () {
+          var data = this.data;
+          var el = this.el;
+
+          var root = document.createElement("a-entity");
+          root.setAttribute("scale", data.scale + " " + data.scale + " " + data.scale);
+
+          // 누워서 자는 포즈일 경우 옆으로 비스듬히 나른하게 누움
+          if (data.pose === "sleeping") {
+            root.setAttribute("rotation", "0 0 24");
+            root.setAttribute(
+              "animation__sleepbreathe",
+              "property: scale; dir: alternate; loop: true; dur: 2400; easing: easeInOutSine; from: " +
+                data.scale + " " + (data.scale * 0.96) + " " + data.scale + "; to: " +
+                (data.scale * 1.04) + " " + (data.scale * 1.02) + " " + (data.scale * 1.02) + ";"
+            );
+          }
+
+          // 1. 몸통 (푹신한 양털 덩어리)
+          var bodyGroup = document.createElement("a-entity");
+
+          // 앉아서 쉬는 포즈일 때 은은한 호흡 바운스
+          if (data.pose === "sitting") {
+            bodyGroup.setAttribute(
+              "animation",
+              "property: scale; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine; from: 1 0.98 1; to: 1.03 1.04 1.02;"
+            );
+          }
+
+          // 메인 몸통 구체
+          var mainBody = document.createElement("a-sphere");
+          mainBody.setAttribute("radius", "0.45");
+          mainBody.setAttribute("scale", "1.1 0.95 1.3");
+          mainBody.setAttribute("material", {
+            color: data.woolColor,
+            roughness: 0.9,
+            metalness: 0.05
+          });
+          bodyGroup.appendChild(mainBody);
+
+          // 몸통 둘레 몽글몽글한 양털 볼륨 퍼프
+          var puffOffsets = [
+            [0.26, 0.16, 0.22, 0.22],
+            [-0.26, 0.16, 0.22, 0.22],
+            [0.28, -0.05, -0.2, 0.23],
+            [-0.28, -0.05, -0.2, 0.23],
+            [0, 0.32, 0.05, 0.25],
+            [0, 0.28, -0.3, 0.22],
+            [0.26, 0.08, -0.4, 0.21],
+            [-0.26, 0.08, -0.4, 0.21],
+            [0.28, 0.12, 0.0, 0.22],
+            [-0.28, 0.12, 0.0, 0.22]
+          ];
+          puffOffsets.forEach(function (p) {
+            var puff = document.createElement("a-sphere");
+            puff.setAttribute("position", p[0] + " " + p[1] + " " + p[2]);
+            puff.setAttribute("radius", p[3]);
+            puff.setAttribute("material", {
+              color: data.woolColor,
+              roughness: 0.92,
+              metalness: 0.0
+            });
+            bodyGroup.appendChild(puff);
+          });
+
+          // 꼬리 (엉덩이 뒤 둥근 꼬리)
+          var tail = document.createElement("a-sphere");
+          tail.setAttribute("position", "0 0.08 -0.62");
+          tail.setAttribute("radius", "0.13");
+          tail.setAttribute("material", { color: data.woolColor, roughness: 0.9 });
+          if (data.pose === "standing") {
+            tail.setAttribute(
+              "animation",
+              "property: rotation; dir: alternate; loop: true; dur: 220; from: 0 -22 0; to: 0 22 0; easing: easeInOutSine;"
+            );
+          } else if (data.pose === "sitting") {
+            tail.setAttribute(
+              "animation",
+              "property: rotation; dir: alternate; loop: true; dur: 1200; from: 0 -12 0; to: 0 12 0; easing: easeInOutSine;"
+            );
+          }
+          bodyGroup.appendChild(tail);
+
+          root.appendChild(bodyGroup);
+
+          // 2. 머리 그룹
+          var headGroup = document.createElement("a-entity");
+          if (data.pose === "sleeping") {
+            headGroup.setAttribute("position", "0.08 0.08 0.55");
+            headGroup.setAttribute("rotation", "8 14 10");
+          } else {
+            headGroup.setAttribute("position", "0 0.22 0.58");
+            if (data.pose === "sitting") {
+              headGroup.setAttribute(
+                "animation",
+                "property: rotation; dir: alternate; loop: true; dur: 3600; easing: easeInOutSine; from: -5 10 -2; to: 4 -8 2;"
+              );
+            }
+          }
+
+          // 얼굴
+          var face = document.createElement("a-sphere");
+          face.setAttribute("radius", "0.23");
+          face.setAttribute("scale", "0.95 0.9 1.15");
+          face.setAttribute("position", "0 0 0.08");
+          face.setAttribute("material", {
+            color: data.faceColor,
+            roughness: 0.7,
+            metalness: 0.05
+          });
+          headGroup.appendChild(face);
+
+          // 머리 위 양털 모자
+          var headWool = document.createElement("a-sphere");
+          headWool.setAttribute("position", "0 0.17 0.03");
+          headWool.setAttribute("radius", "0.16");
+          headWool.setAttribute("scale", "1.1 0.8 1.0");
+          headWool.setAttribute("material", {
+            color: data.woolColor,
+            roughness: 0.9
+          });
+          headGroup.appendChild(headWool);
+
+          // 눈 (자는 양은 얇고 깔끔하게 그린 흰색 U자 감은 눈, 서 있거나 앉은 양은 똘망한 눈)
+          if (data.pose === "sleeping") {
+            [
+              [-0.095, 12],
+              [0.095, -12]
+            ].forEach(function (eyeInfo) {
+              var eyeX = eyeInfo[0];
+              var eyeRotY = eyeInfo[1];
+
+              // 얇고 섬세하게 그려진 흰색 U자 감은 눈
+              var closedEye = document.createElement("a-torus");
+              closedEye.setAttribute("position", eyeX + " 0.045 0.33");
+              closedEye.setAttribute("radius", "0.04");
+              closedEye.setAttribute("radius-tubular", "0.0035");
+              closedEye.setAttribute("arc", "180");
+              closedEye.setAttribute("rotation", "-10 " + eyeRotY + " 180");
+              closedEye.setAttribute("material", {
+                color: "#ffffff",
+                shader: "flat",
+                side: "double"
+              });
+              headGroup.appendChild(closedEye);
+            });
+
+            // 자는 양 머리 위 몽실몽실 Zzz 구름 방울
+            var zzzContainer = document.createElement("a-entity");
+            zzzContainer.setAttribute("position", "0.15 0.35 0.1");
+            [
+              [0, 0, 0, 0.045, 0],
+              [0.08, 0.12, 0, 0.065, 300],
+              [0.18, 0.26, 0, 0.09, 600]
+            ].forEach(function (zItem) {
+              var zDot = document.createElement("a-sphere");
+              zDot.setAttribute("position", zItem[0] + " " + zItem[1] + " " + zItem[2]);
+              zDot.setAttribute("radius", zItem[3]);
+              zDot.setAttribute("material", {
+                color: "#e2e8f0",
+                transparent: true,
+                opacity: 0.82
+              });
+              zDot.setAttribute(
+                "animation",
+                "property: position; dir: alternate; loop: true; dur: 1800; delay: " +
+                  zItem[4] + "; easing: easeInOutSine; to: " +
+                  (zItem[0] + 0.04) + " " + (zItem[1] + 0.06) + " " + zItem[2] + ";"
+              );
+              zzzContainer.appendChild(zDot);
+            });
+            headGroup.appendChild(zzzContainer);
+          } else {
+            [-0.09, 0.09].forEach(function (x) {
+              var eyeWhite = document.createElement("a-sphere");
+              eyeWhite.setAttribute("position", x + " 0.04 0.28");
+              eyeWhite.setAttribute("radius", "0.038");
+              eyeWhite.setAttribute("material", { color: "#ffffff", roughness: 0.2 });
+
+              var pupil = document.createElement("a-sphere");
+              pupil.setAttribute("position", x * 1.05 + " 0.04 0.31");
+              pupil.setAttribute("radius", "0.022");
+              pupil.setAttribute("material", { color: "#0f172a", roughness: 0.1 });
+
+              headGroup.appendChild(eyeWhite);
+              headGroup.appendChild(pupil);
+            });
+          }
+
+          // 사랑스러운 처진 귀 2개
+          [[-0.22, 55], [0.22, -55]].forEach(function (earData) {
+            var ear = document.createElement("a-cylinder");
+            ear.setAttribute("radius", "0.045");
+            ear.setAttribute("height", "0.2");
+            ear.setAttribute("rotation", "30 0 " + earData[1]);
+            ear.setAttribute("position", earData[0] + " 0.06 -0.02");
+            ear.setAttribute("scale", "0.6 1.0 1.2");
+            ear.setAttribute("material", {
+              color: data.faceColor,
+              roughness: 0.8
+            });
+            headGroup.appendChild(ear);
+          });
+
+          root.appendChild(headGroup);
+
+          // 3. 다리 4개 (포즈별 다리 형태)
+          if (data.pose === "sitting") {
+            // 앉아서 쉬는 양: 몸 아래로 얌전히 웅크려 접은 다리
+            var sitLegs = [
+              [-0.15, -0.32, 0.24, "80 0 0"],   // 앞 왼쪽
+              [0.15, -0.32, 0.24, "80 0 0"],    // 앞 오른쪽
+              [-0.25, -0.3, -0.15, "15 0 75"],  // 뒤 왼쪽
+              [0.25, -0.3, -0.15, "15 0 -75"]   // 뒤 오른쪽
+            ];
+            sitLegs.forEach(function (sl) {
+              var leg = document.createElement("a-cylinder");
+              leg.setAttribute("position", sl[0] + " " + sl[1] + " " + sl[2]);
+              leg.setAttribute("rotation", sl[3]);
+              leg.setAttribute("radius", "0.055");
+              leg.setAttribute("height", "0.25");
+              leg.setAttribute("material", { color: data.legColor, roughness: 0.85 });
+              root.appendChild(leg);
+            });
+          } else if (data.pose === "sleeping") {
+            // 누워서 자는 양: 나른하게 옆으로 뻗은 다리
+            var sleepLegs = [
+              [-0.18, -0.25, 0.22, "10 0 45"],
+              [0.08, -0.28, 0.22, "5 0 55"],
+              [-0.18, -0.25, -0.2, "8 0 40"],
+              [0.08, -0.28, -0.2, "5 0 50"]
+            ];
+            sleepLegs.forEach(function (sl) {
+              var leg = document.createElement("a-cylinder");
+              leg.setAttribute("position", sl[0] + " " + sl[1] + " " + sl[2]);
+              leg.setAttribute("rotation", sl[3]);
+              leg.setAttribute("radius", "0.052");
+              leg.setAttribute("height", "0.27");
+              leg.setAttribute("material", { color: data.legColor, roughness: 0.85 });
+              root.appendChild(leg);
+            });
+          } else {
+            // 서서 달리는 양: 앞뒤 역동적인 스윙 다리
+            var legData = [
+              [-0.18, -0.26, 0.22, 1],   // 앞 왼쪽
+              [0.18, -0.26, 0.22, -1],   // 앞 오른쪽
+              [-0.18, -0.26, -0.22, -1], // 뒤 왼쪽
+              [0.18, -0.26, -0.22, 1]    // 뒤 오른쪽
+            ];
+            legData.forEach(function (dataItem) {
+              var legPivot = document.createElement("a-entity");
+              legPivot.setAttribute("position", dataItem[0] + " " + dataItem[1] + " " + dataItem[2]);
+
+              var leg = document.createElement("a-cylinder");
+              leg.setAttribute("position", "0 -0.15 0");
+              leg.setAttribute("radius", "0.055");
+              leg.setAttribute("height", "0.32");
+              leg.setAttribute("material", {
+                color: data.legColor,
+                roughness: 0.85
+              });
+              legPivot.appendChild(leg);
+
+              var swingAngle = dataItem[3] * 30;
+              legPivot.setAttribute(
+                "animation",
+                "property: rotation; dir: alternate; loop: true; dur: 350; easing: easeInOutSine; from: " +
+                  swingAngle + " 0 0; to: " + (-swingAngle) + " 0 0;"
+              );
+
+              root.appendChild(legPivot);
+            });
+          }
+
+          el.appendChild(root);
+        }
+      });
+
+      // 바닥을 몽글몽글 채워 양들이 밟고 뛰어다니는 구름 바다 컴포넌트
+      AFRAME.registerComponent("cloud-floor", {
+        schema: {
+          count: { type: "int", default: 85 }
+        },
+        init: function () {
+          var container = document.createElement("a-entity");
+
+          // 시야를 전혀 가리지 않도록 깊은 바닥 저 아래에 넓게 펼쳐지는 바닥 운해
+          for (var i = 0; i < this.data.count; i++) {
+            var angle = Math.random() * Math.PI * 2;
+            var dist = Math.random() * 18; // 반경 0~18m 광활한 바닥
+            var x = Math.cos(angle) * dist;
+            var z = Math.sin(angle) * dist;
+            var y = -3.2 + (Math.random() - 0.5) * 0.4; // 시야 저 아래로 완전히 깊게 내린 높이 -3.0 ~ -3.4m
+            var scale = 1.4 + Math.random() * 1.8;
+
+            var puffGroup = document.createElement("a-entity");
+            puffGroup.setAttribute("position", x + " " + y + " " + z);
+            puffGroup.setAttribute("scale", scale + " " + (scale * 0.26) + " " + scale);
+
+            var puffCount = 5 + Math.floor(Math.random() * 3);
+            for (var p = 0; p < puffCount; p++) {
+              var puff = document.createElement("a-sphere");
+              var px = (Math.random() - 0.5) * 2.4;
+              var py = (Math.random() - 0.5) * 0.6;
+              var pz = (Math.random() - 0.5) * 2.4;
+              var pr = 0.85 + Math.random() * 0.75;
+
+              puff.setAttribute("position", px + " " + py + " " + pz);
+              puff.setAttribute("radius", pr);
+              puff.setAttribute("material", {
+                shader: "standard",
+                color: "#edf2f7",
+                roughness: 0.95,
+                metalness: 0.0,
+                transparent: true,
+                opacity: 0.92
+              });
+              puffGroup.appendChild(puff);
+            }
+            container.appendChild(puffGroup);
+          }
+
+          // 바닥 구름 층이 은은하고 평화롭게 흐르는 회전 애니메이션
+          container.setAttribute(
+            "animation",
+            "property: rotation; to: 0 -360 0; loop: true; dur: 280000; easing: linear;"
+          );
+
+          this.el.appendChild(container);
+        }
+      });
+    </script>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #5b9cd4;
+      }
+    </style>
+  </head>
+  <body>
+    <a-scene>
+      <!-- 360도 구름 스카이돔 -->
+      <a-sky cloud-sky></a-sky>
+
+      <!-- 3D 입체 뭉게구름 필드 (주변 상공) -->
+      <a-entity cloud-cluster-field="count: 65"></a-entity>
+
+      <!-- 바닥 몽글몽글 구름 바다 (시야에 걸리지 않도록 저 아래 깊숙이 깔리는 바닥 운해) -->
+      <a-entity cloud-floor="count: 95"></a-entity>
+
+      <!-- 눈이 편안한 은은한 환경광 & 부드러운 자연광 -->
+      <a-entity light="type: ambient; color: #cbd5e1; intensity: 0.55"></a-entity>
+      <a-entity
+        light="type: directional; color: #fef3c7; intensity: 0.65"
+        position="5 15 10"
+      ></a-entity>
+      <a-entity
+        light="type: point; color: #f1f5f9; intensity: 0.35; distance: 90"
+        position="0 6 6"
+      ></a-entity>
+
+      <a-entity id="camera-rig" position="0 1.6 0">
+        <a-camera position="0 0 0"></a-camera>
+
+        <!-- [주변 쉼터 1] 앉아서 여유롭게 쉬는 양 (시야에 훤히 보이도록 상단 배치 복원) -->
+        <a-entity position="-1.15 -0.05 -2.4" rotation="0 26 0">
+          <!-- 도톰하고 포근한 구름 쉼터 방석 -->
+          <a-sphere
+            position="0 -0.22 0"
+            radius="0.75"
+            scale="1.2 0.28 1.1"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <a-sphere
+            position="0.22 -0.2 0.16"
+            radius="0.55"
+            scale="1.0 0.24 0.9"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <a-sphere
+            position="-0.22 -0.2 -0.14"
+            radius="0.55"
+            scale="1.0 0.24 0.9"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <!-- 바닥 쪽으로 부드럽게 이어지는 은은한 구름 줄기 베이스 -->
+          <a-sphere
+            position="0 -0.42 0"
+            radius="0.7"
+            scale="1.1 0.45 1.0"
+            material="color: #edf2f7; roughness: 0.95; transparent: true; opacity: 0.88;"
+          ></a-sphere>
+
+          <!-- 아담하고 귀여운 앉아있는 양 -->
+          <a-entity
+            sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.78; pose: sitting"
+          ></a-entity>
+        </a-entity>
+
+        <!-- [주변 쉼터 2] 포근한 구름 침대 위 옹기종기 모여 자는 아기 양 세 마리 (시야에 훤히 보이도록 복원) -->
+        <a-entity position="1.25 -0.08 -2.1">
+          <!-- 넓고 푹신한 구름 침대 베이스 -->
+          <a-sphere
+            position="0 -0.22 0"
+            radius="1.1"
+            scale="1.5 0.28 1.3"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <a-sphere
+            position="-0.4 -0.2 -0.1"
+            radius="0.75"
+            scale="1.1 0.24 1.0"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <a-sphere
+            position="0.45 -0.2 -0.22"
+            radius="0.8"
+            scale="1.1 0.24 1.0"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <a-sphere
+            position="0.1 -0.19 0.4"
+            radius="0.7"
+            scale="1.0 0.24 0.9"
+            material="color: #eef3f8; roughness: 0.95; transparent: true; opacity: 0.93;"
+          ></a-sphere>
+          <!-- 바닥 쪽으로 자연스럽게 이어져 내려가는 구름 하부 볼륨 -->
+          <a-sphere
+            position="0 -0.45 0"
+            radius="1.1"
+            scale="1.4 0.45 1.2"
+            material="color: #edf2f7; roughness: 0.95; transparent: true; opacity: 0.88;"
+          ></a-sphere>
+
+          <!-- 자고 있는 양 1 -->
+          <a-entity
+            position="-0.45 0 -0.1"
+            rotation="0 -32 0"
+            sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.76; pose: sleeping"
+          ></a-entity>
+
+          <!-- 자고 있는 양 2 (살짝 더 깊숙이 비스듬히 누움) -->
+          <a-entity
+            position="0.45 0 -0.28"
+            rotation="0 -55 0"
+            sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.72; pose: sleeping"
+          ></a-entity>
+
+          <!-- 자고 있는 양 3 (앞쪽에서 쿨쿨 잠든 작은 아기 양) -->
+          <a-entity
+            position="0.08 0 0.45"
+            rotation="0 -10 0"
+            sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.70; pose: sleeping"
+          ></a-entity>
+        </a-entity>
+
+        <!-- 다섯 마리 흰털 양이 72도 동일 간격을 두고 구름 위를 뛰어다니는 단일 궤도 리그 -->
+        <a-entity
+          rotation="0 0 0"
+          animation="property: rotation; from: 0 0 0; to: 0 360 0; loop: true; dur: 14000; easing: linear;"
+        >
+          <!-- 1. 흰털 + 검은색 피부 양 (0도 위치) -->
+          <a-entity rotation="0 0 0">
+            <a-entity
+              position="7.0 -0.4 0"
+              rotation="0 180 0"
+              sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 1.0"
+              animation__hop="property: position; dir: alternate; loop: true; dur: 380; easing: easeInOutQuad; from: 7.0 -0.4 0; to: 7.0 0.35 0;"
+              animation__tilt="property: rotation; dir: alternate; loop: true; dur: 380; easing: easeInOutSine; from: -6 180 -4; to: 7 180 4;"
+            ></a-entity>
+          </a-entity>
+
+          <!-- 2. 흰털 + 검은색 피부 양 (72도 위치) -->
+          <a-entity rotation="0 72 0">
+            <a-entity
+              position="7.0 -0.4 0"
+              rotation="0 180 0"
+              sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 1.06"
+              animation__hop="property: position; dir: alternate; loop: true; dur: 390; delay: 60; easing: easeInOutQuad; from: 7.0 -0.4 0; to: 7.0 0.35 0;"
+              animation__tilt="property: rotation; dir: alternate; loop: true; dur: 390; delay: 60; easing: easeInOutSine; from: -7 180 4; to: 6 180 -4;"
+            ></a-entity>
+          </a-entity>
+
+          <!-- 3. 흰털 + 검은색 피부 양 (144도 위치) -->
+          <a-entity rotation="0 144 0">
+            <a-entity
+              position="7.0 -0.4 0"
+              rotation="0 180 0"
+              sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.95"
+              animation__hop="property: position; dir: alternate; loop: true; dur: 370; delay: 120; easing: easeInOutQuad; from: 7.0 -0.4 0; to: 7.0 0.35 0;"
+              animation__tilt="property: rotation; dir: alternate; loop: true; dur: 370; delay: 120; easing: easeInOutSine; from: 6 180 -5; to: -6 180 5;"
+            ></a-entity>
+          </a-entity>
+
+          <!-- 4. 흰털 + 검은색 피부 양 (216도 위치) -->
+          <a-entity rotation="0 216 0">
+            <a-entity
+              position="7.0 -0.4 0"
+              rotation="0 180 0"
+              sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 1.02"
+              animation__hop="property: position; dir: alternate; loop: true; dur: 385; delay: 180; easing: easeInOutQuad; from: 7.0 -0.4 0; to: 7.0 0.35 0;"
+              animation__tilt="property: rotation; dir: alternate; loop: true; dur: 385; delay: 180; easing: easeInOutSine; from: -5 180 3; to: 7 180 -3;"
+            ></a-entity>
+          </a-entity>
+
+          <!-- 5. 흰털 + 검은색 피부 양 (288도 위치) -->
+          <a-entity rotation="0 288 0">
+            <a-entity
+              position="7.0 -0.4 0"
+              rotation="0 180 0"
+              sheep="woolColor: #ffffff; faceColor: #18181b; legColor: #09090b; scale: 0.98"
+              animation__hop="property: position; dir: alternate; loop: true; dur: 375; delay: 240; easing: easeInOutQuad; from: 7.0 -0.4 0; to: 7.0 0.35 0;"
+              animation__tilt="property: rotation; dir: alternate; loop: true; dur: 375; delay: 240; easing: easeInOutSine; from: 5 180 4; to: -6 180 -4;"
+            ></a-entity>
+          </a-entity>
+        </a-entity>
+      </a-entity>
+    </a-scene>
+  </body>
+</html>
